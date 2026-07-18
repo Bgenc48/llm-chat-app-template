@@ -15,10 +15,33 @@ let chatHistory = [
 	{
 		role: "assistant",
 		content:
-			"Hello! I'm an LLM chat app powered by Cloudflare Workers AI. How can I help you today?",
+			"Hi — I can help you understand an IRS notice or letter and walk through your options for handling a tax balance. Tell me the notice number (like CP2000 or LT11) or describe your situation. What's going on?",
 	},
 ];
 let isProcessing = false;
+
+// Suggestion chips: fill the input with the chip text and send it.
+const suggestionsEl = document.getElementById("suggestions");
+if (suggestionsEl) {
+	suggestionsEl.addEventListener("click", function (e) {
+		const chip = e.target.closest(".chip");
+		if (!chip || isProcessing) return;
+		userInput.value = chip.textContent.trim();
+		sendMessage();
+	});
+}
+
+// CTA — placeholder for the lead-capture / EA-CPA booking flow (Phase 1).
+const ctaLink = document.getElementById("cta-link");
+if (ctaLink) {
+	ctaLink.addEventListener("click", function (e) {
+		e.preventDefault();
+		addMessageToChat(
+			"assistant",
+			"A licensed Enrolled Agent or CPA can review your documents and handle deadlines for you. (Booking/lead-capture flow goes here — coming in the paid tier.)",
+		);
+	});
+}
 
 // Auto-resize textarea as user types
 userInput.addEventListener("input", function () {
@@ -53,6 +76,9 @@ async function sendMessage() {
 
 	// Add user message to chat
 	addMessageToChat("user", message);
+
+	// Hide the suggestion chips once the conversation is underway
+	if (suggestionsEl) suggestionsEl.style.display = "none";
 
 	// Clear input
 	userInput.value = "";
@@ -173,8 +199,10 @@ async function sendMessage() {
 			}
 		}
 
-		// Add completed response to chat history
+		// Render final markdown (links, bold, lists) and save to history
 		if (responseText.length > 0) {
+			assistantTextEl.innerHTML = renderMarkdown(responseText);
+			chatMessages.scrollTop = chatMessages.scrollHeight;
 			chatHistory.push({ role: "assistant", content: responseText });
 		}
 	} catch (error) {
@@ -201,7 +229,10 @@ async function sendMessage() {
 function addMessageToChat(role, content) {
 	const messageEl = document.createElement("div");
 	messageEl.className = `message ${role}-message`;
-	messageEl.innerHTML = `<p>${content}</p>`;
+	// Use textContent (not innerHTML) so user/model text can't inject markup.
+	const p = document.createElement("p");
+	p.textContent = content;
+	messageEl.appendChild(p);
 	chatMessages.appendChild(messageEl);
 
 	// Scroll to bottom
@@ -227,4 +258,25 @@ function consumeSseEvents(buffer) {
 		events.push(dataLines.join("\n"));
 	}
 	return { events, buffer: normalized };
+}
+
+/**
+ * Minimal, safe Markdown renderer for a controlled subset (bold, italics,
+ * links, line breaks). HTML is escaped FIRST so nothing can inject markup.
+ */
+function renderMarkdown(text) {
+	let h = text
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
+	// [label](url) -> anchor (http/https only)
+	h = h.replace(
+		/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+		'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+	);
+	// **bold**
+	h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+	// _italic_ (only when clearly delimited, to avoid URLs/mid-word underscores)
+	h = h.replace(/(^|[\s(])_([^_\n]+)_/g, "$1<em>$2</em>");
+	return h;
 }
