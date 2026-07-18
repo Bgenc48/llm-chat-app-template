@@ -4,6 +4,7 @@ import {
 	extractNoticeCodes,
 	scanForPII,
 	buildSystemPrompt,
+	composeReply,
 } from "../src/knowledge";
 
 describe("notice code extraction", () => {
@@ -65,5 +66,24 @@ describe("system prompt grounding", () => {
 	it("stays scoped (no reference block) when nothing matches", () => {
 		const p = buildSystemPrompt("recommend a good movie");
 		expect(p).not.toContain("END REFERENCE MATERIAL");
+	});
+});
+
+describe("deterministic notice cards", () => {
+	it("returns a formatted, cited card for a recognized notice code", () => {
+		const md = composeReply("What does a CP2000 mean?");
+		expect(md).not.toBeNull();
+		expect(md).toContain("**"); // markdown formatting
+		expect(md).toContain("Sources");
+		expect(md).toContain("irs.gov");
+	});
+	it("flags an urgent levy notice with the time-sensitive badge", () => {
+		expect(composeReply("I got an LT11")).toContain("Time-sensitive");
+	});
+	it("cards a 'can't pay' resolution question", () => {
+		expect(composeReply("I can't pay my tax bill")).toContain("Payment Plan");
+	});
+	it("returns null (defer to model) for a vague/off-topic message", () => {
+		expect(composeReply("hello there")).toBeNull();
 	});
 });

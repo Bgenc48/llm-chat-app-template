@@ -18,6 +18,7 @@
 import { Env, ChatMessage } from "./types";
 import {
 	buildSystemPrompt,
+	composeReply,
 	scanForPII,
 	PII_REFUSAL_MESSAGE,
 } from "./knowledge";
@@ -73,6 +74,16 @@ async function handleChatRequest(
 		const pii = scanForPII(lastUserText);
 		if (pii.blocked) {
 			return sseFromText(PII_REFUSAL_MESSAGE);
+		}
+
+		// FAST PATH: if the message confidently maps to a known notice/topic,
+		// answer with a deterministic, authoritative card built from our own
+		// curated data — accurate, well-formatted, and instant. No dependence
+		// on the small language model for the most common (and highest-value)
+		// case: someone typing in their notice code.
+		const card = composeReply(lastUserText);
+		if (card) {
+			return sseFromText(card);
 		}
 
 		// GROUNDING: never trust a client-supplied system prompt. Strip any

@@ -343,7 +343,7 @@ export const KNOWLEDGE_BASE: KnowledgeEntry[] = [
 		id: "unfiled-returns",
 		kind: "resolution",
 		title: "Unfiled / Back Tax Returns",
-		keywords: ["unfiled", "haven't filed", "back taxes", "old returns", "multiple years", "didn't file", "substitute for return", "sfr"],
+		keywords: ["unfiled", "unfiled returns", "years of unfiled", "haven't filed", "back taxes", "old returns", "multiple years", "didn't file", "substitute for return", "sfr"],
 		urgency: "important",
 		summary:
 			"If you have years of unfiled returns, the priority is getting into compliance. If you don't file, the IRS may file a Substitute for Return (SFR) on your behalf without your deductions or credits, usually resulting in a higher balance. Filing the actual returns often reduces what's owed and reopens resolution options.",
@@ -424,7 +424,7 @@ export interface ScoredEntry {
  * Retrieve the most relevant knowledge entries for a user message.
  * Scoring: exact notice-code hits dominate; otherwise keyword overlap.
  */
-export function retrieve(query: string, topK = 3): KnowledgeEntry[] {
+export function retrieveScored(query: string, topK = 3): ScoredEntry[] {
 	const codes = extractNoticeCodes(query);
 	const tokens = new Set(tokenize(query));
 	const scored: ScoredEntry[] = [];
@@ -453,7 +453,60 @@ export function retrieve(query: string, topK = 3): KnowledgeEntry[] {
 	}
 
 	scored.sort((a, b) => b.score - a.score);
-	return scored.slice(0, topK).map((s) => s.entry);
+	return scored.slice(0, topK);
+}
+
+export function retrieve(query: string, topK = 3): KnowledgeEntry[] {
+	return retrieveScored(query, topK).map((s) => s.entry);
+}
+
+// A confident match: a notice-code hit, or a strong keyword overlap. Used to
+// decide when we can answer with a deterministic, authoritative card instead
+// of leaning on the (small, swappable) language model.
+const STRONG_SCORE = 5;
+export function topMatch(query: string): ScoredEntry | null {
+	const [top] = retrieveScored(query, 1);
+	return top && top.score >= STRONG_SCORE ? top : null;
+}
+
+const URGENCY_BADGE: Record<Urgency, string> = {
+	info: "🟢 Good to know",
+	important: "🟡 Needs attention",
+	urgent: "🔴 Time-sensitive — act now",
+};
+
+/** Render a knowledge entry as a clean, cited Markdown "card". */
+export function renderCardMarkdown(entry: KnowledgeEntry): string {
+	const steps = entry.steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+	const deadline = entry.deadline
+		? `\n\n**⏰ Deadline:** ${entry.deadline}`
+		: "";
+	const sources = entry.citations
+		.map((c) => `- [${c.label}](${c.url})`)
+		.join("\n");
+	return [
+		`**${entry.title}**`,
+		URGENCY_BADGE[entry.urgency],
+		"",
+		entry.summary,
+		"",
+		"**What to do**",
+		steps + deadline,
+		"",
+		"**Sources**",
+		sources,
+		"",
+		"_General information, not tax advice. For your specific situation, confirm with a licensed Enrolled Agent or CPA._",
+	].join("\n");
+}
+
+/**
+ * If the message confidently maps to a known notice/topic, return a
+ * deterministic, authoritative Markdown card. Otherwise null (use the model).
+ */
+export function composeReply(query: string): string | null {
+	const top = topMatch(query);
+	return top ? renderCardMarkdown(top.entry) : null;
 }
 
 /**

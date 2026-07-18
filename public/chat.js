@@ -199,8 +199,10 @@ async function sendMessage() {
 			}
 		}
 
-		// Add completed response to chat history
+		// Render final markdown (links, bold, lists) and save to history
 		if (responseText.length > 0) {
+			assistantTextEl.innerHTML = renderMarkdown(responseText);
+			chatMessages.scrollTop = chatMessages.scrollHeight;
 			chatHistory.push({ role: "assistant", content: responseText });
 		}
 	} catch (error) {
@@ -256,4 +258,25 @@ function consumeSseEvents(buffer) {
 		events.push(dataLines.join("\n"));
 	}
 	return { events, buffer: normalized };
+}
+
+/**
+ * Minimal, safe Markdown renderer for a controlled subset (bold, italics,
+ * links, line breaks). HTML is escaped FIRST so nothing can inject markup.
+ */
+function renderMarkdown(text) {
+	let h = text
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
+	// [label](url) -> anchor (http/https only)
+	h = h.replace(
+		/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+		'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+	);
+	// **bold**
+	h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+	// _italic_ (only when clearly delimited, to avoid URLs/mid-word underscores)
+	h = h.replace(/(^|[\s(])_([^_\n]+)_/g, "$1<em>$2</em>");
+	return h;
 }
